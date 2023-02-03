@@ -39,3 +39,42 @@ It is these *.cov files that are utilized in the proceeding step of differential
 ```
 bismark_methylation_extractor --bedGraph --gzip sample1_1_val_1_bismark_bt2_pe.bam.gz
 ```
+## 6. Differential methylation analysis using the R package edgeR 
+In this step we utilize the Bioconductor package edgeR to analyse the the coverage data following the manual by [Chen et al.2017](https://f1000research.com/articles/6-2055/v2).
+```
+targets = read.csv("sample_files_and_descriptionFile.csv", header = T)##this file contains the sample COVERAGE(.cov)file name and the treatment or sample description
+files <- paste0(targets$File,"")
+yall <- readBismark2DGE(files, sample.names=targets$Sample)
+chromosomes = read.csv("genomic_chromosomes_genes.csv", header = T)##some genomes have mitochondrial genome + scafold that are not mapped to chromosomes/ usually these are removed by providing a vector of chromosomes via this file
+yall$samples$group <- factor(targets$Group)
+table(yall$genes$Chr)
+yall<-yall[yall$genes$Chr%in%chromosomes$Scafold_chr,]
+##total up methylated and unmethylated "C"s to get total coverage.
+Methylation = gl(2,1,ncol(yall), labels = c("Me", "Un"))
+Me = yall$counts[, Methylation=="Me"]
+Un = yall$counts[, Methylation=="Un"]
+Coverage = Me + Un
+##Filter our CpGs with less than 8 counts per sample.
+HasCoverage = rowSums(Coverage >= 8) == length(targets$Sample) ## reamove any CpG with less that 8 counts per  sample
+HasBoth=rowSums(Me) > 0 & rowSums(Un) > 0 ##Keep CpGs that show variability across samples, not fixed methylation or unmethylation state.
+table(HasCoverage,HasBoth)
+y = yall[HasCoverage & HasBoth,, keep.lib.sizes=F]
+TotalLibSize = y$samples$lib.size[Methylation=="Me"] + y$samples$lib.size[Methylation=="Un"]
+y$samples$lib.size = rep(TotalLibSize, each = 2)
+Me = y$counts[, Methylation == "Me"]
+Un = y$counts[, Methylation == "Un"]
+#set GLM model
+designSL = model.matrix(~0+Group, targets)
+design = modelMatrixMeth(designSL)
+y <- estimateDisp(y, design, trend="none")
+y$common.dispersion
+fit <- glmFit(y, design)
+#Run contrast
+contr = makeContrasts(GroupTreatment1vsTreatment2 = GroupTreatment1 - GroupTreatment2, levels = design) ###make contrast between two groups under investigation.
+lrt = glmLRT(fit, contrast = contr)
+summary(decideTests(lrt))
+lrt_top <- topTags(lrt,adjust.method = "BH", sort.by = "PValue")
+FDR_THRESHOLD = 0.05
+dgegenes<- lrt_top$table[ lrt_top$table$FDR< FDR_THRESHOLD, ]
+write.csv(dgegenes, file = "differentially_Methylated_CpGs.csv")###Save the differentially methylated CpGs
+```
