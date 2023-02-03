@@ -6,7 +6,7 @@ Differential methylation analyses is followed up by annotation of the differenti
 This pipeline has been utilized in our recently published article [Mukiibi et al.(2022)](https://doi.org/10.1016/j.ygeno.2022.110503).
 **Note:** We are assuming paired-end dataset in the pipeline.
 
-###### 1. Bisulphite sequence data quality assessment using FastQC
+## 1. Bisulphite sequence data quality assessment using FastQC
 [FastQC](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/) provides some basic sequencing quality on the raw reads including length distribution of the reads,per base and sequence quality scores, adapter content etc. These are useful for quality control in data cleaning prior to downstream analyses or processing.
 ```
 outputFolder = /path_to_output_folder/
