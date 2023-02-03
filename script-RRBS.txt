@@ -1,0 +1,63 @@
+###Trimming
+module load apps/gcc/fastqc/0.11.2
+module load compilers/python/2.7.13
+module load apps/gcc/cutadapt/1.4
+cd /groups2/houston_grp/diego/salmon-SRS-RRBS/raw
+for folder in {r,h}*
+do
+	cd $folder
+	OUTPUT1="/groups2/houston_grp/diego/salmon-SRS-RRBS/trimmed/${folder}_1.fastq.gz"
+	OUTPUT2="/groups2/houston_grp/diego/salmon-SRS-RRBS/trimmed/${folder}_2.fastq.gz"
+	/groups2/houston_grp/diego/software/TrimGalore-0.5.0/trim_galore -o /groups2/houston_grp/diego/salmon-SRS-RRBS/trimmed/ --rrbs --paired *_1.fastq.gz  *_2.fastq.gz
+	/groups2/houston_grp/diego/salmon-SRS-RRBS/trimmed/
+	mv *_1_val_1.fq.gz $OUTPUT1
+	mv *_2_val_2.fq.gz $OUTPUT2
+	cd /groups2/houston_grp/diego/salmon-SRS-RRBS/raw
+done
+
+
+##Alignment. Try Bismark and BS-seeker3
+module load apps/gcc/bowtie2/2.2.6
+module load apps/gcc/samtools/1.6
+##Create a folder for the genome, and put the genome fasta file there
+/groups2/houston_grp/diego/software/Bismark_v0.20.0/bismark_genome_preparation /groups2/houston_grp/diego/software/Bismark_v0.20.0/salmon_genome/
+##Alignment
+for file in /mnt/ris-fas1a/linux_groups2/houston_grp/diego/salmon-SRS-RRBS/trimmed/*_1.fq.gz
+do
+echo /groups2/houston_grp/diego/software/Bismark_v0.20.0/bismark -p 4 --parallel 16 --genome /groups2/houston_grp/diego/software/Bismark_v0.20.0/salmon_genome/ -1 $file -2 $file
+done
+
+##Analyse methylation results
+module load apps/gcc/samtools/1.6
+module load compilers/perl/5.18.1
+/groups2/houston_grp/diego/software/Bismark_v0.20.0/bismark_methylation_extractor -p --counts --no_overlap --parallel 10 --bedGraph --gzip --ignore 4 --ignore_r2 3 --ignore_3prime_r2 3 --comprehensive h102_1_bismark_bt2_pe.bam h104_1_bismark_bt2_pe.bam h110_1_bismark_bt2_pe.bam h118_1_bismark_bt2_pe.bam h120_1_bismark_bt2_pe.bam
+
+##Create html reports - in the same directory as the bismark files:
+/groups2/houston_grp/diego/software/Bismark_v0.20.0/bismark2report
+/groups2/houston_grp/diego/software/Bismark_v0.20.0/bismark2summary
+
+
+##In R, try to use methylKit for differential methylation analysis
+/groups2/houston_grp/diego/software/R-3.4.0/bin/R
+library(methylKit)
+
+#Name of the files
+file_names <- read.table("cov-file-list.txt", header = FALSE)
+
+#Name of the samples
+sample_names <- read.table("sample-names.txt", header = FALSE)
+
+##Phenotype
+liver_vs_headkidney <- c(rep(0,33), rep(1,33))
+
+#Load data
+raw_data <- methRead(location = as.list(as.character(file_names$V1)), sample.id = as.list(as.character(sample_names$V1)), assembly = "Ssa", pipeline = "bismarkCoverage", treatment = liver_vs_headkidney, mincov = 10)
+
+##Discards bases that have coverage below 10X and also discards the bases that have more than 99.9th percentile of coverage in each sample
+filtered.myobj=filterByCoverage(raw_data,lo.count=10,lo.perc=NULL, hi.count=NULL,hi.perc=99.9)
+
+#Methylation information for regions/bases that are covered in all samples
+meth=unite(filtered.myobj, destrand=TRUE)
+
+##Using a sliding window approach
+tiles=tileMethylCounts(filtered.myobj,win.size=1000,step.size=1000)
